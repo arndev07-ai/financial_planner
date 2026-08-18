@@ -1,0 +1,24 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pennywise
+    ports:
+      - "5000:5000"
+    environment:
+      - NODE_ENV=production
+      - PORT=5000
+      # Set a strong secret in production:
+      - JWT_SECRET=${JWT_SECRET:-change-this-in-production-to-a-long-random-string}
+      # OCR engine path (leave default to use bundled traineddata)
+      - TESSERACT_LANG_PATH=/app/data/traineddata
+      - RECURRING_INTERVAL_MS=21600000
+    volumes:
+      - pennywise-data:/app/data
+      - pennywise-uploads:/app/uploads
+    restart: unless-stopped
+
+volumes:
+  pennywise-data:
+  pennywise-uploads:

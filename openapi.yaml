@@ -1,0 +1,376 @@
+openapi: 3.0.3
+info:
+  title: PennyWise Finance Tracker API
+  description: |
+    Personal finance tracker with income/expense tracking, budgets, analytics,
+    receipt OCR, recurring transactions, assets/net worth, currency conversion,
+    CSV import/export and offline PWA support.
+  version: 1.0.0
+  contact:
+    name: PennyWise Team
+
+servers:
+  - url: /api
+
+security:
+  - bearerAuth: []
+  - cookieAuth: []
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      security: []
+      responses:
+        '200':
+          description: API and database are healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+                  database: { type: string, example: connected }
+
+  /auth/register:
+    post:
+      summary: Register a new user
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, password]
+              properties:
+                name: { type: string, minLength: 2 }
+                email: { type: string, format: email }
+                password: { type: string, format: password, minLength: 8 }
+      responses:
+        '201':
+          description: User created, JWT returned
+        '400':
+          description: Validation error
+        '409':
+          description: Email already registered
+
+  /auth/login:
+    post:
+      summary: Log in
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, format: password }
+      responses:
+        '200':
+          description: Logged in, cookie set
+        '401':
+          description: Invalid credentials
+        '429':
+          description: Too many attempts
+
+  /income:
+    get:
+      summary: List income records
+      parameters:
+        - { name: from, in: query, schema: { type: string } }
+        - { name: to, in: query, schema: { type: string } }
+        - { name: category, in: query, schema: { type: string } }
+        - { name: month, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: Income list
+    post:
+      summary: Create income
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount, source, category, date]
+              properties:
+                amount: { type: number, exclusiveMinimum: 0 }
+                source: { type: string }
+                category: { type: string }
+                date: { type: string, format: date }
+                is_recurring: { type: boolean }
+                currency: { type: string, pattern: '^[A-Z]{3}$', default: USD }
+                notes: { type: string }
+      responses:
+        '201':
+          description: Created income record
+
+  /expenses:
+    get:
+      summary: List expenses
+      parameters:
+        - { name: from, in: query, schema: { type: string } }
+        - { name: to, in: query, schema: { type: string } }
+        - { name: category, in: query, schema: { type: string } }
+        - { name: merchant, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: Expense list
+    post:
+      summary: Create expense
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount, merchant, category, date]
+              properties:
+                amount: { type: number, exclusiveMinimum: 0 }
+                merchant: { type: string }
+                category: { type: string }
+                date: { type: string, format: date }
+                currency: { type: string, pattern: '^[A-Z]{3}$', default: USD }
+                receipt_path: { type: string }
+                project_id: { type: integer }
+                notes: { type: string }
+      responses:
+        '201':
+          description: Created expense
+
+  /budgets:
+    get:
+      summary: List monthly budgets with progress
+    post:
+      summary: Set a category budget
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                category_name: { type: string }
+                amount: { type: number }
+                month: { type: string }
+
+  /projects:
+    get:
+      summary: List project budgets
+    post:
+      summary: Create a project budget
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, total_budget, start_date]
+              properties:
+                name: { type: string }
+                total_budget: { type: number, exclusiveMinimum: 0 }
+                start_date: { type: string, format: date }
+                end_date: { type: string, format: date }
+      responses:
+        '201':
+          description: Created project
+
+  /projects/{id}/expenses:
+    get:
+      summary: List expenses linked to a project
+    post:
+      summary: Link an expense to a project (increments spent)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expense_id]
+              properties:
+                expense_id: { type: integer }
+      responses:
+        '201':
+          description: Expense linked
+        '409':
+          description: Already linked
+
+  /projects/{projectId}/expenses/{expenseId}:
+    delete:
+      summary: Unlink an expense from a project (decrements spent)
+
+  /upload/receipt:
+    post:
+      summary: Upload a receipt image or PDF and scan it with OCR
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                receipt:
+                  type: string
+                  format: binary
+                merchant: { type: string }
+                amount: { type: number }
+      responses:
+        '201':
+          description: Receipt uploaded and scanned
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  filename: { type: string }
+                  url: { type: string }
+                  scan:
+                    type: object
+                    properties:
+                      merchant: { type: string }
+                      amount: { type: number }
+                      date: { type: string }
+                      confidence: { type: number }
+                      source: { type: string, enum: [ocr, fallback] }
+
+  /recurring:
+    get:
+      summary: List recurring rules (also processes due rules)
+    post:
+      summary: Create a recurring transaction
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type, amount, description, frequency, next_date]
+              properties:
+                type: { type: string, enum: [income, expense] }
+                amount: { type: number }
+                description: { type: string }
+                frequency: { type: string, enum: [daily, weekly, monthly, yearly] }
+                next_date: { type: string, format: date }
+
+  /recurring/upcoming:
+    get:
+      summary: List upcoming recurring payments within N days
+      parameters:
+        - { name: days, in: query, schema: { type: integer, default: 14 } }
+
+  /recurring/process:
+    post:
+      summary: Process all due recurring rules, creating transactions
+
+  /assets:
+    get:
+      summary: List assets
+    post:
+      summary: Create an asset
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, type, value]
+              properties:
+                name: { type: string }
+                type: { type: string, enum: [cash, investment, property, crypto, other] }
+                value: { type: number, minimum: 0 }
+                currency: { type: string, pattern: '^[A-Z]{3}$', default: USD }
+                note: { type: string }
+
+  /assets/networth:
+    get:
+      summary: Net worth total, allocation by type and history
+
+  /currency/rates:
+    get:
+      summary: List USD base currency rates
+    post:
+      summary: Set or update a currency rate
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [base, quote, rate]
+              properties:
+                base: { type: string, pattern: '^[A-Z]{3}$' }
+                quote: { type: string, pattern: '^[A-Z]{3}$' }
+                rate: { type: number, exclusiveMinimum: 0 }
+
+  /currency/convert:
+    get:
+      summary: Convert an amount between currencies
+      parameters:
+        - { name: amount, in: query, required: true, schema: { type: number } }
+        - { name: from, in: query, schema: { type: string, default: USD } }
+        - { name: to, in: query, schema: { type: string, default: USD } }
+
+  /currency/convert/transactions:
+    get:
+      summary: Convert all transactions to a target currency
+      parameters:
+        - { name: to, in: query, schema: { type: string, default: USD } }
+        - { name: from, in: query, schema: { type: string, format: date } }
+
+  /export/expenses.csv:
+    get:
+      summary: Export expenses as CSV
+
+  /export/expenses.json:
+    get:
+      summary: Export expenses as JSON
+
+  /export/expenses.pdf:
+    get:
+      summary: Export expenses as a PDF report
+
+  /import/transactions:
+    post:
+      summary: Import transactions from a bank CSV
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+
+  /settings:
+    get:
+      summary: Get user settings
+    put:
+      summary: Update user settings
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                preferred_currency: { type: string, pattern: '^[A-Z]{3}$' }
+                notify_budget: { type: boolean }
+
+  /categories:
+    get:
+      summary: List categories
+    post:
+      summary: Create a category
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: pennywise_token
