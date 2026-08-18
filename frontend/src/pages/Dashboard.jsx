@@ -38,6 +38,16 @@ export default function Dashboard() {
   const [editing, setEditing] = useState(null);
   const [deleting, setDeleting] = useState(null);
 
+  const summary = analytics?.summary;
+
+  const budgetsWithProgress = budgets?.budgets || [];
+
+  const totalBudgetAlert = useMemo(() => {
+    const over = budgetsWithProgress.filter((b) => b.progress >= 100);
+    const warn = budgetsWithProgress.filter((b) => b.progress >= 80 && b.progress < 100);
+    return { over: over.length, warn: warn.length };
+  }, [budgetsWithProgress]);
+
   useEffect(() => {
     refreshAnalytics();
     refreshBudgets();
@@ -49,20 +59,10 @@ export default function Dashboard() {
     sendNotification('Budget alert', `${totalBudgetAlert.over} budget(s) exceeded this month.`, { tag: 'budget' });
   }, [totalBudgetAlert.over]);
 
-  const summary = analytics?.summary;
-
-  const budgetsWithProgress = budgets?.budgets || [];
-
   const chartData = useMemo(
     () => (analytics?.categoryDist?.categories || []).map((c) => ({ name: c.name, value: c.total })),
     [analytics]
   );
-
-  const totalBudgetAlert = useMemo(() => {
-    const over = budgetsWithProgress.filter((b) => b.progress >= 100);
-    const warn = budgetsWithProgress.filter((b) => b.progress >= 80 && b.progress < 100);
-    return { over: over.length, warn: warn.length };
-  }, [budgetsWithProgress]);
 
   async function handleSubmitForm(data) {
     if (editing) {
